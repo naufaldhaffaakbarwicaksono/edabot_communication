@@ -3,7 +3,12 @@ import threading
 import time
 import json  # Add this line
 
-def send_broadcast_message(message, port=48102):
+# Read IP and port from robot_ip.txt
+with open('robot_ip.txt', 'r') as f:
+    SERVER_IP = f.readline().strip()
+    SERVER_PORT = int(f.readline().strip())
+
+def send_broadcast_message(message, port=SERVER_PORT):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Add reuse address option
@@ -11,11 +16,11 @@ def send_broadcast_message(message, port=48102):
     sock.sendto(message.encode(), broadcast_address)
     sock.close()
 
-def receive_broadcast_message(port=48102):  # Modify this line
+def receive_broadcast_message(port=SERVER_PORT):  # Modify this line
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(('', port))
-    local_ip = '192.168.2.111'  # Hard-coded IP address
+    local_ip = SERVER_IP  # Use the IP from the file
     while True:
         data, addr = sock.recvfrom(1024)
         if addr[0] != local_ip:  # Prevent loopback
@@ -23,7 +28,7 @@ def receive_broadcast_message(port=48102):  # Modify this line
             print(f"Received message: {message} from IP: {addr[0]}")
 
 def start_receiving():  # Modify this line
-    recv_thread = threading.Thread(target=receive_broadcast_message, args=(48102,))  # Modify this line
+    recv_thread = threading.Thread(target=receive_broadcast_message, args=(SERVER_PORT,))  # Modify this line
     recv_thread.daemon = True
     recv_thread.start()
 

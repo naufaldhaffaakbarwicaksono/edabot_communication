@@ -8,8 +8,10 @@ import time
 to_cc = SimpleQueue()
 from_cc = SimpleQueue()
 
-SERVER_IP = '192.168.1.2'
-SERVER_PORT = 48101
+# Read IP and port from tcp_ip.txt
+with open('tcp_ip.txt', 'r') as f:
+    SERVER_IP = f.readline().strip()
+    SERVER_PORT = int(f.readline().strip())
 
 def connect_to_server():
     while True:

@@ -13,9 +13,11 @@ def connect_to_forward_tcp(sock):
             continue
 
 def run(to_cc, from_cc):
-    # Server setup to receive data from forward_tcp.py
-    SERVER_IP = '192.168.2.111'
-    SERVER_PORT = 48100
+    # Read server IP and port from file
+    with open('tcp_ip.txt', 'r') as f:
+        SERVER_IP = f.readline().strip()
+        SERVER_PORT = int(f.readline().strip())
+    
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((SERVER_IP, SERVER_PORT))

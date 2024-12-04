@@ -1,0 +1,32 @@
+"""
+Possible Bugs and Issues
+1.  Hardcoded IP and Port (security issue).
+2.  Lack of Exception Handling, the program would crash without a clear explanation,
+    an uncaught exception in one of the callbacks will crash the entire node.
+3.  Blocking I/O on the Socket.
+4.  Race condition on shared resources.
+5.  Socket not properly closed, this could lead to resource leaks or 
+    "Address already in use" errors if the program is restarted quickly.
+6.  Multiple timer with high frequencies, this could lead to high CPU usage.
+7. publisher not properly removed, this could lead to memory leaks.
+8.  If any message contains unsupported types (NaN, infinite, etc.), the json 
+    serialization would crash.
+9.  If map data stops, the program would send last map data.
+10. Sending data by appending to a buffer, this could lead to memory leaks 
+    if clients slow or unresponsive.
+11. Timer callback could overlaping, if it take longer then its interval.
+12. Not properly use Logging Level.
+13. If the connection drops, there is no mechanism to reconnect or handle 
+    partial data gracefully.
+14. There is no synchronization or rate matching between data from different topics
+
+Solving Recomendation:
+1.  Use a configuration management system (YAML or .env files) for parameters 
+    like IP, port, and topic names.
+2.  Implement exception handling and cleanup for sockets and ROS resources.
+3.  Encapsulate shared variables to prevent race conditions.
+4.  Optimize timer frequencies and log levels to reduce CPU usage and clutter.
+5.  Add reconnection logic for sockets and robust error handling for JSON 
+    parsing and serialization.
+6.  Using circular buffer
+"""
