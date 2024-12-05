@@ -19,6 +19,7 @@ with open("server_ip.txt", "r") as f:
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+print(f"Binding {SERVER_IP}:{SERVER_PORT}")
 sock.bind((SERVER_IP, SERVER_PORT))
 sock.listen(1)
 try:
@@ -51,17 +52,28 @@ class StatusSubscriber(Node):
         self.robot_data_json = None
         self.previous_robot_data_json = None
 
-        self.create_subscription(Imu, "imu", self.imu_callback, 10)
-        self.create_subscription(Odometry, "odom", self.odom_callback, 10)
-        self.create_subscription(Twist, "cmd_vel", self.cmd_vel_callback, 10)
-        self.create_subscription(OccupancyGrid, "map", self.map_callback, 10)
+        callback_group = MutuallyExclusiveCallbackGroup()
         self.create_subscription(
-            PoseStamped, "/zed/zed_node/pose", self.pose_callback, 10
+            Imu, "imu", self.imu_callback, 10, callback_group=callback_group
+        )
+        self.create_subscription(
+            Odometry, "odom", self.odom_callback, 10, callback_group=callback_group
+        )
+        self.create_subscription(
+            Twist, "cmd_vel", self.cmd_vel_callback, 10, callback_group=callback_group
+        )
+        self.create_subscription(
+            OccupancyGrid, "map", self.map_callback, 10, callback_group=callback_group
+        )
+        self.create_subscription(
+            PoseStamped,
+            "/zed/zed_node/pose",
+            self.pose_callback,
+            10,
+            callback_group=callback_group,
         )
 
-        self.create_timer(
-            0.5, self.timer_callback, callback_group=ReentrantCallbackGroup()
-        )
+        self.create_timer(0.5, self.timer_callback, callback_group=callback_group)
 
     def imu_callback(self, msg):
         self.last_imu_msg = msg
@@ -286,9 +298,8 @@ class HandleReceive(Node):
     def __init__(self, status_subscriber):
         super().__init__("handle_receive")
         self.status_subscriber = status_subscriber
-        self.create_timer(
-            0.5, self.timer_callback, callback_group=ReentrantCallbackGroup()
-        )
+        callback_group = MutuallyExclusiveCallbackGroup()
+        self.create_timer(0.5, self.timer_callback, callback_group=callback_group)
         self.get_logger().info(f"Connection established with {addr}")
         self.send_buffer = b""
 
@@ -310,7 +321,8 @@ class HandleReceive(Node):
         self.send_buffer += data
         while self.send_buffer:
             try:
-                sent = conn.send(self.send_buffer)
+                with client_socket_lock:
+                    sent = conn.send(self.send_buffer)
                 self.send_buffer = self.send_buffer[sent:]
             except BlockingIOError:
                 break
@@ -325,17 +337,17 @@ class ReceivePublish(Node):
         )
         self.dynamic_publishers = {}
         self.first_input_received = False
-        self.create_timer(
-            0.5, self.timer_callback, callback_group=ReentrantCallbackGroup()
-        )
+        callback_group = MutuallyExclusiveCallbackGroup()
+        self.create_timer(0.5, self.timer_callback, callback_group=callback_group)
 
     def timer_callback(self):
         global control_json, default_control_json
         self.get_logger().debug("Publishing control data...")
-        if not self.first_input_received:
-            self.process_control_data(default_control_json)
-        else:
-            self.process_control_data(control_json)
+        with control_json_lock:
+            if not self.first_input_received:
+                self.process_control_data(default_control_json)
+            else:
+                self.process_control_data(control_json)
 
     def process_control_data(self, control_json):
         if control_json["command"] == "keyboard":
@@ -383,7 +395,8 @@ class ReceiveControl(Node):
     def receive_data(self):
         global control_json
         try:
-            data_forward_tcp = client_socket.recv(4096)
+            with client_socket_lock:
+                data_forward_tcp = client_socket.recv(4096)
             if data_forward_tcp:
                 control_data = json.loads(data_forward_tcp.decode("utf-8"))
                 with control_json_lock:
