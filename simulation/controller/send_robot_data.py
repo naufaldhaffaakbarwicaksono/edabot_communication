@@ -4,31 +4,24 @@ from rclpy.node import Node
 from message_filters import ApproximateTimeSynchronizer, Subscriber, Cache
 from sensor_msgs.msg import Imu
 from nav_msgs.msg import Odometry, OccupancyGrid
-from geometry_msgs.msg import Twist
-from std_msgs.msg import Float64MultiArray
-from geometry_msgs.msg import PoseStamped, Pose
 
 import socket
 import json
 import threading
 from dotenv import load_dotenv
 import os
-import pprint
 
 load_dotenv()
 
 
 def ros_message_to_dict(msg):
-    """
-    Recursively convert a ROS 2 message to a dictionary.
-    """
     result = {}
     for field_name in msg.get_fields_and_field_types():
         value = getattr(msg, field_name)
-        # If the value is a ROS message, recursively convert it
+        
         if hasattr(value, "get_fields_and_field_types"):
             result[field_name] = ros_message_to_dict(value)
-        # If the value is an array, handle each element
+        
         elif isinstance(value, (list, tuple)):
             result[field_name] = [
                 ros_message_to_dict(item)
@@ -41,7 +34,7 @@ def ros_message_to_dict(msg):
     return result
 
 
-class SendToIntegrity(Node):
+class SendRobotData(Node):
     def __init__(self):
         super().__init__("topic_to_tcp_node")
 
@@ -119,7 +112,7 @@ class SendToIntegrity(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = SendToIntegrity()
+    node = SendRobotData()
 
     try:
         rclpy.spin(node)
@@ -128,7 +121,3 @@ def main(args=None):
     finally:
         node.destroy_node()
         rclpy.shutdown()
-
-
-if __name__ == "__main__":
-    main()
