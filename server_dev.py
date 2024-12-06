@@ -1,7 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
-from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from sensor_msgs.msg import Imu
 from nav_msgs.msg import Odometry, OccupancyGrid
 from geometry_msgs.msg import Twist
@@ -9,20 +9,26 @@ from std_msgs.msg import Float64MultiArray
 from geometry_msgs.msg import PoseStamped, Pose
 import json
 import socket
+import threading
 
 SERVER_IP = '0.0.0.0' #harusnya dari txt ipnya
 SERVER_PORT = 48101 #harusnya dari txt portnya
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-sock.bind((SERVER_IP, SERVER_PORT))
-sock.listen(1)
-try:
-    conn, addr = sock.accept()
-    client_socket = conn
-except socket.error as e:
-    print(f"Socket error: {e}")
-    exit(1)
+sock_lock = threading.Lock()
+control_json_lock = threading.Lock()
+buffer_lock = threading.Lock()
+
+with sock_lock:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    sock.bind((SERVER_IP, SERVER_PORT))
+    sock.listen(1)
+    try:
+        conn, addr = sock.accept()
+        client_socket = conn
+    except socket.error as e:
+        print(f"Socket error: {e}")
+        exit(1)
 
 default_control_json = {
     "command": "keyboard",
@@ -35,6 +41,7 @@ control_json = default_control_json.copy()
 class StatusSubscriber(Node):
     def __init__(self):
         super().__init__('status_subscriber')
+        self.callback_group = MutuallyExclusiveCallbackGroup()
         self.last_imu_msg = None
         self.last_odom_msg = None
         self.last_cmd_vel_msg = None
@@ -44,13 +51,13 @@ class StatusSubscriber(Node):
         self.robot_data_json = None
         self.previous_robot_data_json = None
 
-        self.create_subscription(Imu, 'imu', self.imu_callback, 10)
-        self.create_subscription(Odometry, 'odom', self.odom_callback, 10)
-        self.create_subscription(Twist, 'cmd_vel', self.cmd_vel_callback, 10)
-        self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
-        self.create_subscription(PoseStamped, '/zed/zed_node/pose', self.pose_callback, 10)
+        self.create_subscription(Imu, 'imu', self.imu_callback, 10, callback_group=self.callback_group)
+        self.create_subscription(Odometry, 'odom', self.odom_callback, 10, callback_group=self.callback_group)
+        self.create_subscription(Twist, 'cmd_vel', self.cmd_vel_callback, 10, callback_group=self.callback_group)
+        self.create_subscription(OccupancyGrid, '/local_costmap/costmap', self.map_callback, 10, callback_group=self.callback_group)
+        self.create_subscription(PoseStamped, '/zed/zed_node/pose', self.pose_callback, 10, callback_group=self.callback_group)
 
-        self.create_timer(0.5, self.timer_callback, callback_group=ReentrantCallbackGroup())
+        self.create_timer(0.5, self.timer_callback, callback_group=self.callback_group)
 
     def imu_callback(self, msg):
         self.last_imu_msg = msg
@@ -206,8 +213,9 @@ class StatusSubscriber(Node):
 class HandleReceive(Node):
     def __init__(self, status_subscriber):
         super().__init__('handle_receive')
+        self.callback_group = MutuallyExclusiveCallbackGroup()
         self.status_subscriber = status_subscriber
-        self.create_timer(0.5, self.timer_callback, callback_group=ReentrantCallbackGroup())
+        self.create_timer(0.5, self.timer_callback, callback_group=self.callback_group)
         self.get_logger().info(f"Connection established with {addr}")
         self.send_buffer = b''
         self.send_robot_data = True  # Flag to alternate between robot_data and pose_to_other_robot
@@ -227,30 +235,33 @@ class HandleReceive(Node):
             self.send_robot_data = not self.send_robot_data  # Toggle the flag
 
     def send_data(self, data):
-        self.send_buffer += data
-        while self.send_buffer:
-            try:
-                sent = conn.send(self.send_buffer)
-                self.send_buffer = self.send_buffer[sent:]
-            except BlockingIOError:
-                break
+        with sock_lock:
+            self.send_buffer += data
+            while self.send_buffer:
+                try:
+                    sent = conn.send(self.send_buffer)
+                    self.send_buffer = self.send_buffer[sent:]
+                except BlockingIOError:
+                    break
 
 class ReceivePublish(Node):
     def __init__(self):
         super().__init__('data_sender')
+        self.callback_group = MutuallyExclusiveCallbackGroup()
         self.cmd_vel_publisher = self.create_publisher(Twist, '/cmd_vel', 10)
         self.goal_pose_publisher = self.create_publisher(Float64MultiArray, '/send_goal_pose', 10)
         self.dynamic_publishers = {}
         self.first_input_received = False
-        self.create_timer(0.5, self.timer_callback, callback_group=ReentrantCallbackGroup())
+        self.create_timer(0.5, self.timer_callback, callback_group=self.callback_group)
 
     def timer_callback(self):
         global control_json, default_control_json
         self.get_logger().debug("Publishing control data...")
-        if not self.first_input_received:
-            self.process_control_data(default_control_json)
-        else:
-            self.process_control_data(control_json)
+        with control_json_lock:
+            if not self.first_input_received:
+                self.process_control_data(default_control_json)
+            else:
+                self.process_control_data(control_json)
 
     def process_control_data(self, control_json):
         if control_json["command"] == "keyboard":
@@ -287,22 +298,29 @@ class ReceivePublish(Node):
 class ReceiveControl(Node):
     def __init__(self):
         super().__init__('receive_control')
-        self.create_timer(0.1, self.receive_data, callback_group=ReentrantCallbackGroup())
-        client_socket.setblocking(False)
+        self.callback_group = MutuallyExclusiveCallbackGroup()
+        self.create_timer(0.1, self.receive_data, callback_group=self.callback_group)
+        with sock_lock:
+            client_socket.setblocking(False)
         self.get_logger().info("ReceiveControl node started")
         self.buffer = b''
 
     def receive_data(self):
         global control_json
         try:
-            data_forward_tcp = client_socket.recv(4096)
+            with sock_lock:
+                data_forward_tcp = client_socket.recv(4096)
             if data_forward_tcp:
-                self.buffer += data_forward_tcp
+                with buffer_lock:
+                    self.buffer += data_forward_tcp
                 try:
-                    control_data = json.loads(self.buffer.decode('utf-8'))
-                    control_json = control_data
+                    with buffer_lock:
+                        control_data = json.loads(self.buffer.decode('utf-8'))
+                    with control_json_lock:
+                        control_json = control_data
                     self.get_logger().info("Control data received and updated")
-                    self.buffer = b''  # Clear buffer after successful JSON parsing
+                    with buffer_lock:
+                        self.buffer = b''  # Clear buffer after successful JSON parsing
                 except json.JSONDecodeError:
                     # Incomplete JSON data, wait for more data
                     pass
