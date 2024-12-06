@@ -45,8 +45,9 @@ class StatusSubscriber(Node):
         self.last_imu_msg = None
         self.last_odom_msg = None
         self.last_cmd_vel_msg = None
-        self.last_map_msg = None
+        self.last_localcostmap_msg = None
         self.last_pose_msg = None
+        self.last_globalcostmap_msg = None
         self.map_received = False
         self.robot_data_json = None
         self.previous_robot_data_json = None
@@ -54,8 +55,11 @@ class StatusSubscriber(Node):
         self.create_subscription(Imu, 'imu', self.imu_callback, 10, callback_group=self.callback_group)
         self.create_subscription(Odometry, 'odom', self.odom_callback, 10, callback_group=self.callback_group)
         self.create_subscription(Twist, 'cmd_vel', self.cmd_vel_callback, 10, callback_group=self.callback_group)
-        self.create_subscription(OccupancyGrid, '/local_costmap/costmap', self.map_callback, 10, callback_group=self.callback_group)
+        self.create_subscription(OccupancyGrid, '/local_costmap/costmap', self.local_costmap_callback, 10, callback_group=self.callback_group)
+        self.create_subscription(OccupancyGrid, '/global_costmap/costmap', self.global_costmap_callback, 10, callback_group=self.callback_group)
         self.create_subscription(PoseStamped, '/zed/zed_node/pose', self.pose_callback, 10, callback_group=self.callback_group)
+        #self.create_subscription(PoseStamped, '/zed/zed_node/pose', self.pose_callback, 10, callback_group=self.callback_group)
+
 
         self.create_timer(0.5, self.timer_callback, callback_group=self.callback_group)
 
@@ -71,12 +75,16 @@ class StatusSubscriber(Node):
         self.last_cmd_vel_msg = msg
         self.get_logger().info("Cmd_vel data received")
 
-    def map_callback(self, msg):
-        self.last_map_msg = msg
+    def local_costmap_callback(self, msg):
+        self.last_localcostmap_msg = msg
         if not self.map_received:
             self.map_received = True
             self.get_logger().info("Map data received and cached for the first time.")
         self.get_logger().info("Map data received")
+
+    def global_costmap_callback(self, msg):
+        self.last_globalcostmap_msg = msg
+        self.get_logger().info("Global costmap data received")
 
     def pose_callback(self, msg):
         self.last_pose_msg = msg
@@ -147,37 +155,47 @@ class StatusSubscriber(Node):
             }
         }
 
-        map_data = {
-            "info": {
-                "resolution": self.last_map_msg.info.resolution if self.last_map_msg else 0.0,
-                "width": self.last_map_msg.info.width if self.last_map_msg else 0,
-                "height": self.last_map_msg.info.height if self.last_map_msg else 0,
+        localmap_data = {
+                "resolution": self.last_localcostmap_msg.info.resolution if self.last_localcostmap_msg else 0.0,
+                "width": self.last_localcostmap_msg.info.width if self.last_localcostmap_msg else 0,
+                "height": self.last_localcostmap_msg.info.height if self.last_localcostmap_msg else 0,
                 "origin": {
                     "position": {
-                        "x": self.last_map_msg.info.origin.position.x if self.last_map_msg else 0.0,
-                        "y": self.last_map_msg.info.origin.position.y if self.last_map_msg else 0.0,
-                        "z": self.last_map_msg.info.origin.position.z if self.last_map_msg else 0.0
+                        "x": self.last_localcostmap_msg.info.origin.position.x if self.last_localcostmap_msg else 0.0,
+                        "y": self.last_localcostmap_msg.info.origin.position.y if self.last_localcostmap_msg else 0.0,
+                        "z": self.last_localcostmap_msg.info.origin.position.z if self.last_localcostmap_msg else 0.0
                     },
                     "orientation": {
-                        "x": self.last_map_msg.info.origin.orientation.x if self.last_map_msg else 0.0,
-                        "y": self.last_map_msg.info.origin.orientation.y if self.last_map_msg else 0.0,
-                        "z": self.last_map_msg.info.origin.orientation.z if self.last_map_msg else 0.0,
-                        "w": self.last_map_msg.info.origin.orientation.w if self.last_map_msg else 0.0
+                        "x": self.last_localcostmap_msg.info.origin.orientation.x if self.last_localcostmap_msg else 0.0,
+                        "y": self.last_localcostmap_msg.info.origin.orientation.y if self.last_localcostmap_msg else 0.0,
+                        "z": self.last_localcostmap_msg.info.origin.orientation.z if self.last_localcostmap_msg else 0.0,
+                        "w": self.last_localcostmap_msg.info.origin.orientation.w if self.last_localcostmap_msg else 0.0
                     }
+            },
+            "data": list(self.last_localcostmap_msg.data) if self.last_localcostmap_msg else []
+        }
+
+        globalmap_data = {
+            "resolution": self.last_globalcostmap_msg.info.resolution if self.last_globalcostmap_msg else 0.0,
+            "width": self.last_globalcostmap_msg.info.width if self.last_globalcostmap_msg else 0,
+            "height": self.last_globalcostmap_msg.info.height if self.last_globalcostmap_msg else 0,
+            "origin": {
+                "position": {
+                    "x": self.last_globalcostmap_msg.info.origin.position.x if self.last_globalcostmap_msg else 0.0,
+                    "y": self.last_globalcostmap_msg.info.origin.position.y if self.last_globalcostmap_msg else 0.0,
+                    "z": self.last_globalcostmap_msg.info.origin.position.z if self.last_globalcostmap_msg else 0.0
+                },
+                "orientation": {
+                    "x": self.last_globalcostmap_msg.info.origin.orientation.x if self.last_globalcostmap_msg else 0.0,
+                    "y": self.last_globalcostmap_msg.info.origin.orientation.y if self.last_globalcostmap_msg else 0.0,
+                    "z": self.last_globalcostmap_msg.info.origin.orientation.z if self.last_globalcostmap_msg else 0.0,
+                    "w": self.last_globalcostmap_msg.info.origin.orientation.w if self.last_globalcostmap_msg else 0.0
                 }
             },
-            "data": list(self.last_map_msg.data) if self.last_map_msg else []
+            "data": list(self.last_globalcostmap_msg.data) if self.last_globalcostmap_msg else []
         }
 
         pose_data = {
-            "header": {
-                "stamp": {
-                    "sec": self.last_pose_msg.header.stamp.sec if self.last_pose_msg else 0,
-                    "nanosec": self.last_pose_msg.header.stamp.nanosec if self.last_pose_msg else 0
-                },
-                "frame_id": self.last_pose_msg.header.frame_id if self.last_pose_msg else ""
-            },
-            "pose": {
                 "position": {
                     "x": self.last_pose_msg.pose.position.x if self.last_pose_msg else 0.0,
                     "y": self.last_pose_msg.pose.position.y if self.last_pose_msg else 0.0,
@@ -188,16 +206,16 @@ class StatusSubscriber(Node):
                     "y": self.last_pose_msg.pose.orientation.y if self.last_pose_msg else 0.0,
                     "z": self.last_pose_msg.pose.orientation.z if self.last_pose_msg else 0.0,
                     "w": self.last_pose_msg.pose.orientation.w if self.last_pose_msg else 0.0
-                }
             }
         }
 
         robot_data = {
             "imu": imu_data,
             "odometry": odometry_data,
-            "cmd_vel": cmd_vel_data,
-            "map": map_data,
-            "position_robot": pose_data
+            "velocity": cmd_vel_data,
+            "local_map": localmap_data,
+            "global_map": globalmap_data,
+            "pose": pose_data
         }
 
         pose_to_other_robot = {
