@@ -7,11 +7,14 @@ load_dotenv()
 env = "simulation"  # or production
 robot_id = int(os.getenv("ROBOT_ID"))
 
-tcp_ip = os.getenv("TCP_IP", "127.0.0.1")
-tcp_port = int(os.getenv("TCP_PORT", 5000))
-
-broadcast_ip = os.getenv("BROADCAST_IP")
-broadcast_port = int(os.getenv("BROADCAST_PORT"))
+raspi_ip = os.getenv("RASPI_IP")
+raspi_port = int(os.getenv("RASPI_PORT"))
+zinq_ip = os.getenv("ZINQ_IP")
+zinq_port = int(os.getenv("ZINQ_PORT"))
+orin_ip = os.getenv("ORIN_IP")
+orin_port = int(os.getenv("ORIN_PORT"))
+server_ip = os.getenv("SERVER_IP")
+server_port = int(os.getenv("SERVER_PORT"))
 
 bypass_integrity = True
 
