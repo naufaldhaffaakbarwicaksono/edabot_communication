@@ -3,8 +3,12 @@ def ros_msg_to_dict(msg):
     for field_name, field_type in msg.get_fields_and_field_types().items():
         value = getattr(msg, field_name)
 
-        # skip stamp and header msg
-        if field_name == "stamp" or field_name == "header":
+        # skip stamp and header and covariance msg
+        if (
+            field_name == "stamp"
+            or field_name == "header"
+            or "covariance" in field_name
+        ):
             continue
 
         # Check if the field is a nested message
