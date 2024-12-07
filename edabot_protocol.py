@@ -1,6 +1,7 @@
 from socket import socket
 import configs
 import hashlib
+import zlib
 
 
 HEAD = b"R" + configs.robot_id.to_bytes(1, byteorder="big")
@@ -12,16 +13,16 @@ def calculate_checksum(payload: str):
     return hashlib.sha256(payload).digest()[:CHECKSUM_SIZE]
 
 
-def send_packet(sock: socket, payload: dict, simple_protocol=True):
+def send_packet(sock: socket, payload: str, simple_protocol=True):
     try:
+        payload = zlib.compress(payload.encode())
         if simple_protocol:
-            packet = HEAD + payload.encode() + TAIL
+            packet = HEAD + payload + TAIL
         else:
-            byte_payload = payload.encode()
             length = len(payload).to_bytes(3, byteorder="big")
-            checksum = calculate_checksum(byte_payload)
+            checksum = calculate_checksum(payload)
 
-            packet = HEAD + length + byte_payload + checksum
+            packet = HEAD + length + payload + checksum
 
         sock.sendall(packet)
         return True
@@ -55,7 +56,7 @@ def receive_packet(sock: socket, simple_protocol=True):
             if received_checksum != calculate_checksum(payload):
                 return
 
-        return payload.decode()
+        return zlib.decompress(payload).decode()
     except Exception as e:
         print(e)
         return False
