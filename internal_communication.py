@@ -4,18 +4,34 @@ from rclpy.node import Node
 from message_filters import ApproximateTimeSynchronizer, Subscriber, Cache
 from sensor_msgs.msg import Imu
 from nav_msgs.msg import Odometry, OccupancyGrid
+from geometry_msgs.msg import Pose, Twist
 
-from utils import ros_message_to_dict
 import socket
 import json
-import multiprocessing
+import threading
 import configs
-from edabot_protocol import create_packet
+from utils import ros_msg_to_dict, dict_to_ros_msg
+from edabot_protocol import send_packet, receive_packet
 
 
-class RosHandler(Node):
+class RosPubHandler(Node):
     def __init__(self):
-        super().__init__("topic_to_tcp_node")
+        super().__init__("edabot_com_pub")
+
+        self.pub_cmd_vel = self.create_publisher(Twist, "/cmd_vel", 10)
+
+    def publish_cmd_vel(self, payload):
+        data = Twist()
+
+    def check_topic(self, topic):
+        topic_list = self.get_topic_names_and_types()
+        topic_exists = any(topic[0] == topic for topic in topic_list)
+
+
+class RosSubHandler(Node):
+    def __init__(self):
+        super().__init__("edabot_com_sub")
+
         sub_imu = Subscriber(self, Imu, "/imu")
         sub_odom = Subscriber(self, Odometry, "/odom")
         sub_local_costmap = Subscriber(
@@ -51,23 +67,10 @@ class RosHandler(Node):
             return
 
         self._json_data = {
-            "imu": {
-                "orientation": ros_message_to_dict(imu.orientation),
-                "angular_velocity": ros_message_to_dict(imu.angular_velocity),
-                "linear_acceleration": ros_message_to_dict(imu.linear_acceleration),
-            },
-            "odom": {
-                "pose": ros_message_to_dict(odom.pose.pose),
-                "twist": ros_message_to_dict(odom.twist.twist),
-            },
-            "local_costmap": {
-                "info": ros_message_to_dict(local_costmap.info),
-                "data": list(local_costmap.data),
-            },
-            "global_costmap": {
-                "info": ros_message_to_dict(global_costmap.info),
-                "data": list(global_costmap.data),
-            },
+            "imu": ros_msg_to_dict(imu),
+            "odom": ros_msg_to_dict(odom),
+            "local_costmap": ros_msg_to_dict(local_costmap),
+            "global_costmap": ros_msg_to_dict(global_costmap),
         }
 
     @property
@@ -78,63 +81,61 @@ class RosHandler(Node):
 
 
 class InternalCom:
-    def __init__(self):
-        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        client_socket.bind(("0.0.0.0", 12341))
-        client_socket.connect(("127.0.0.1", 9999))
+    def __init__(self, no_thread=False):
+        # Initialize the client socket
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        self.client_socket.bind((configs.orin_ip, configs.orin_port))
+        self.client_socket.connect((configs.zinq_ip, configs.zinq_port))
 
-        # Provide a name for this client
-        client_name = "orin"
-        client_socket.send(client_name.encode("utf-8"))
-        print(f"Connected to server as {client_name}")
+        # Start threads for receiving and sending messages
+        if not no_thread:
+            threading.Thread(target=self.receive_messages, daemon=True).start()
+            threading.Thread(target=self.send_messages, daemon=True).start()
 
-        # Create separate processes for receiving and sending messages
-        receive_process = multiprocessing.Process(
-            target=self.receive_messages, args=(client_socket,)
-        )
-        send_process = multiprocessing.Process(
-            target=self.send_messages, args=(client_socket,)
-        )
+    def initialize_ros_node(self, node_class):
+        """Helper to initialize and return a ROS node."""
+        rclpy.init()
+        return node_class()
 
-        receive_process.start()
-        send_process.start()
+    def cleanup_ros_node(self, node):
+        """Helper to clean up a ROS node."""
+        node.destroy_node()
+        rclpy.shutdown()
 
-        # Wait for both processes to complete
-        receive_process.join()
-        send_process.join()
-
-    def receive_messages(self, sock):
-        while True:
-            try:
-                message = sock.recv(1024).decode("utf-8")
-                if not message:
-                    break
-                print(f"Server: {message}")
-            except ConnectionResetError:
-                break
-        print("Server disconnected.")
-        sock.close()
-
-    def send_messages(self, sock):
+    def receive_messages(self):
+        node = self.initialize_ros_node(RosPubHandler)
         try:
-            rclpy.init()
-            node = RosHandler()
             while True:
-                try:
+                message = receive_packet(self.client_socket)
+                if not message:
                     rclpy.spin_once(node, timeout_sec=1)
-                    data = node.json_data
-                    if data:
-                        sock.sendall(data.encode())
-                except (ConnectionResetError, BrokenPipeError):
-                    break
-        except KeyboardInterrupt:
-            node.get_logger().info("Node stopped by user")
+                    continue
+                node.publish(message)
+                rclpy.spin_once(node, timeout_sec=1)
+                print(f"Server: {message}")
+        except (ConnectionResetError, KeyboardInterrupt) as e:
+            print(f"Receive error: {e}")
         finally:
-            node.destroy_node()
-            rclpy.shutdown()
-        print("Connection closed.")
-        sock.close()
+            self.cleanup_ros_node(node)
+            print("Server disconnected.")
+            self.client_socket.close()
+
+    def send_messages(self):
+        node = self.initialize_ros_node(RosSubHandler)
+        try:
+            while True:
+                data = json.dumps(node.json_data)
+                if data.encode() != b"{}":
+                    if not send_packet(self.client_socket, data):
+                        print("Send Failed")
+                rclpy.spin_once(node, timeout_sec=3)
+        except (ConnectionResetError, BrokenPipeError, KeyboardInterrupt) as e:
+            print(f"Send error: {e}")
+        finally:
+            self.cleanup_ros_node(node)
+            print("Connection closed.")
+            self.client_socket.close()
 
 
 if __name__ == "__main__":
