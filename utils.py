@@ -24,6 +24,10 @@ def ros_msg_to_dict(msg):
                 for item in value
             ]
 
+        # Handles cases like NumPy arrays
+        elif hasattr(value, "tolist"):
+            result[field_name] = value.tolist()
+
         # Basic field assignment
         else:
             result[field_name] = value
