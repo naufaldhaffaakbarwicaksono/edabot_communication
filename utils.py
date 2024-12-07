@@ -16,8 +16,3 @@ def ros_message_to_dict(msg):
         else:
             result[field_name] = value
     return result
-
-
-class SharedData:
-    def __init__(self, initial_value=None):
-        self.value = None
