@@ -38,14 +38,14 @@ class RosSubHandler(Node):
             self,
             OccupancyGrid,
             "/local_costmap/costmap"
-            if configs.env == "production"
+            if not configs.is_simulation
             else "/local_costmap/costmap",
         )
         sub_global_costmap = Subscriber(
             self,
             OccupancyGrid,
             "/global_costmap/costmap"
-            if configs.env == "production"
+            if not configs.is_simulation
             else "/global_costmap/costmap",
         )
 
@@ -88,54 +88,52 @@ class InternalCom:
         self.client_socket.bind((configs.orin_ip, configs.orin_port))
         self.client_socket.connect((configs.zinq_ip, configs.zinq_port))
 
+        # Initialize ROS 2 context once globally
+        rclpy.init()
+        self.publisher_node = RosPubHandler()
+        self.subscriber_node = RosSubHandler()
+
         # Start threads for receiving and sending messages
         if not no_thread:
-            threading.Thread(target=self.receive_messages, daemon=True).start()
-            threading.Thread(target=self.send_messages, daemon=True).start()
+            threading.Thread(target=self.receive_messages).start()
+            threading.Thread(target=self.send_messages).start()
 
-    def initialize_ros_node(self, node_class):
-        """Helper to initialize and return a ROS node."""
-        rclpy.init()
-        return node_class()
-
-    def cleanup_ros_node(self, node):
-        """Helper to clean up a ROS node."""
-        node.destroy_node()
-        rclpy.shutdown()
+    def cleanup(self):
+        """Cleanup resources."""
+        try:
+            self.publisher_node.destroy_node()
+            self.subscriber_node.destroy_node()
+        finally:
+            rclpy.shutdown()
+            self.client_socket.close()
 
     def receive_messages(self):
-        node = self.initialize_ros_node(RosPubHandler)
         try:
             while True:
                 message = receive_packet(self.client_socket)
                 if not message:
-                    rclpy.spin_once(node, timeout_sec=1)
+                    rclpy.spin_once(self.publisher_node, timeout_sec=1)
                     continue
-                node.publish(message)
-                rclpy.spin_once(node, timeout_sec=1)
+                self.publisher_node.publish(message)
+                rclpy.spin_once(self.publisher_node, timeout_sec=1)
                 print(f"Server: {message}")
         except (ConnectionResetError, KeyboardInterrupt) as e:
             print(f"Receive error: {e}")
         finally:
-            self.cleanup_ros_node(node)
             print("Server disconnected.")
-            self.client_socket.close()
 
     def send_messages(self):
-        node = self.initialize_ros_node(RosSubHandler)
         try:
             while True:
-                data = json.dumps(node.json_data)
+                data = json.dumps(self.subscriber_node.json_data)
                 if data.encode() != b"{}":
                     if not send_packet(self.client_socket, data):
                         print("Send Failed")
-                rclpy.spin_once(node, timeout_sec=3)
+                rclpy.spin_once(self.subscriber_node, timeout_sec=3)
         except (ConnectionResetError, BrokenPipeError, KeyboardInterrupt) as e:
             print(f"Send error: {e}")
         finally:
-            self.cleanup_ros_node(node)
             print("Connection closed.")
-            self.client_socket.close()
 
 
 if __name__ == "__main__":
