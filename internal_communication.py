@@ -87,7 +87,10 @@ class InternalCom:
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         self.client_socket.bind((configs.orin_ip, configs.orin_port))
-        self.client_socket.connect((configs.zinq_ip, configs.zinq_port))
+        if configs.bypass_integrity:
+            self.client_socket.connect((configs.raspi_ip, configs.raspi_port))
+        else:
+            self.client_socket.connect((configs.zinq_ip, configs.zinq_port))
 
         # Initialize ROS 2 context once globally
         rclpy.init()
@@ -112,15 +115,6 @@ class InternalCom:
             print("Shutting down communication.")
         finally:
             executor.shutdown()
-            print("Executor shut down.")
-
-    def cleanup(self):
-        """Cleanup resources."""
-        try:
-            self.publisher_node.destroy_node()
-            self.subscriber_node.destroy_node()
-        finally:
-            rclpy.shutdown()
             self.client_socket.close()
 
     def receive_messages(self):
