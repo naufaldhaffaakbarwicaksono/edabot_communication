@@ -4,7 +4,7 @@ import os
 load_dotenv()
 
 
-env = "simulation"  # or production
+is_simulation = False
 robot_id = int(os.getenv("ROBOT_ID"))
 
 raspi_ip = os.getenv("RASPI_IP")
