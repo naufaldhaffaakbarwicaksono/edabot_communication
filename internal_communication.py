@@ -88,9 +88,9 @@ class InternalCom:
         self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         self.client_socket.bind((configs.orin_ip, configs.orin_port))
         if configs.bypass_integrity:
-            self.client_socket.connect((configs.raspi_ip, configs.raspi_port))
+            self.client_socket.connect((configs.raspi_ip, configs.raspi_port_server))
         else:
-            self.client_socket.connect((configs.zinq_ip, configs.zinq_port))
+            self.client_socket.connect((configs.zinq_ip, configs.zinq_port_secure))
 
         # Initialize ROS 2 context once globally
         rclpy.init()
