@@ -51,18 +51,25 @@ Edabot Communication is a system designed to manage and simulate communication p
    ```bash
    git clone https://github.com/naufaldhaffaakbarwicaksono/edabot_communication.git
    ```
-2. Set up the environment:
+
+2. Install python-dotenv library:
+   ```bash
+   pip install python-dotenv
+   ```
+   Install dotenv library to make and read `.env`
+
+3. Set up the environment:
    ```bash
    cp .env.example .env
    ```
    Configure the `.env` file with your environment-specific settings.
 
-3. Install dependencies:
+4. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-4. Run:
+5. Run:
     - **For Jetson Orin**:
 
         ```bash
