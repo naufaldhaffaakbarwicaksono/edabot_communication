@@ -81,6 +81,30 @@ Edabot Communication is a system designed to manage and simulate communication p
 
 > **_NOTE:_**  Current simulation is only support for simulate communication between Jetson Orin and Zinq. To be updated soon!
 
+**Setup Turtlebot3**
+1. Install turtlebot3 simulation inside `edabot_communication` folder.
+
+   ```bash
+   cd simulation/src/
+   git clone -b humble https://github.com/ROBOTIS-GIT/turtlebot3_simulations.git
+   cd .. && colcon build --symlink-install
+   ```
+2. Launch Simulation World
+
+   ```bash
+   export TURTLEBOT3_MODEL=waffle
+   ros2 launch turtlebot3_gazebo empty_world.launch.py
+   ```
+3. Open new terminal, and run Navigation Node
+
+   ```bash
+   export TURTLEBOT3_MODEL=waffle
+   ros2 launch turtlebot3_navigation2 navigation2.launch.py use_sim_time:=True map:=simulation/map.yaml
+   ```
+
+> **_NOTE:_**  If you cannot open the map on rviz, you must change `robot_model_type` value to ` nav2_amcl::DifferentialMotionModel` inside `/opt/ros/humble/share/turtlebot3_navigation2/param/waffle.yaml`.
+
+**Run**
 1. Simulate communication Jetson Orin and Zinq
    
    Open new terminal
