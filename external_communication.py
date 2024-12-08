@@ -1,44 +1,35 @@
 import socket
-import configs
+import json
 import threading
-import time
+import configs
+from edabot_protocol import send_packet, receive_packet
 
 
-def udp_broadcast_sender():
-    broadcast_address = (configs.broadcast_ip, configs.broadcast_port)
-    message = b"Hello, WSL"
+class ExternalCom:
+    def __init__(self):
+        # TODO: Initialize Raspi as Server for Dashboard
+        self.raspi_socket = ...
 
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        if not configs.bypass_integrity:
+            # TODO: Initialize Raspi as Client for Zinq
+            self.zinq_socket = ...
+            pass
 
-        while True:
-            print(f"Sending: {message.decode()}")
-            sock.sendto(message, broadcast_address)
-            time.sleep(1)
+        # Start threads for receiving and sending messages
+        self.start()
 
+    def start(self):
+        # TODO: Initialize threads, must be 4 active threads, see internal_communication.py and simulate_zinq.py for inspiration
+        pass
 
-def udp_broadcast_receiver():
-    listen_address = ("", configs.broadcast_port)
+    def receive_messages(self, sock):
+        # TODO: Create handler for receiving message
+        pass
 
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.bind(listen_address)
-
-        print("Listening for broadcast messages...")
-
-        while True:
-            try:
-                message, address = sock.recvfrom(1024)
-                if address[0] == "172.25.59.215":
-                    continue
-                print(f"Received from {address}: {message.decode()}")
-            except socket.timeout:
-                print("No messages received. Timeout occurred.")
-                break
+    def send_messages(self, sock):
+        # TODO: Create handler for sending message
+        pass
 
 
 if __name__ == "__main__":
-    sender = threading.Thread(target=udp_broadcast_sender)
-    receiver = threading.Thread(target=udp_broadcast_receiver)
-
-    sender.start()
-    receiver.start()
+    external_com = ExternalCom()
