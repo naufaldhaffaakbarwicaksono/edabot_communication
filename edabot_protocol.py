@@ -26,9 +26,10 @@ def send_packet(sock: socket, payload: str, simple_protocol=True):
 
         sock.sendall(packet)
         return True
+    except BrokenPipeError:
+        raise BrokenPipeError("Broken pipe occured while trying to sending data!")
     except Exception as e:
-        print(e)
-        return False
+        raise Exception(e)
 
 
 def receive_packet(sock: socket, simple_protocol=True):
@@ -58,5 +59,4 @@ def receive_packet(sock: socket, simple_protocol=True):
 
         return zlib.decompress(payload).decode()
     except Exception as e:
-        print(e)
-        return False
+        raise Exception(e)

@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
 
 from message_filters import ApproximateTimeSynchronizer, Subscriber, Cache
 from sensor_msgs.msg import Imu
@@ -20,8 +21,8 @@ class RosPubHandler(Node):
 
         self.pub_cmd_vel = self.create_publisher(Twist, "/cmd_vel", 10)
 
-    def publish_cmd_vel(self, payload):
-        data = Twist()
+    def publish_cmd_vel(self, payload: Twist):
+        self.pub_cmd_vel.publish(payload)
 
     def check_topic(self, topic):
         topic_list = self.get_topic_names_and_types()
@@ -86,7 +87,10 @@ class InternalCom:
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         self.client_socket.bind((configs.orin_ip, configs.orin_port))
-        self.client_socket.connect((configs.zinq_ip, configs.zinq_port))
+        if configs.bypass_integrity:
+            self.client_socket.connect((configs.raspi_ip, configs.raspi_port_server))
+        else:
+            self.client_socket.connect((configs.zinq_ip, configs.zinq_port_secure))
 
         # Initialize ROS 2 context once globally
         rclpy.init()
@@ -94,30 +98,41 @@ class InternalCom:
         self.subscriber_node = RosSubHandler()
 
         # Start threads for receiving and sending messages
-        if not no_thread:
-            threading.Thread(target=self.receive_messages).start()
-            threading.Thread(target=self.send_messages).start()
+        self.start()
 
-    def cleanup(self):
-        """Cleanup resources."""
+    def start(self):
+        executor = MultiThreadedExecutor()
+        executor.add_node(self.publisher_node)
+        executor.add_node(self.subscriber_node)
+
+        threading.Thread(target=self.receive_messages, daemon=True).start()
+        threading.Thread(target=self.send_messages, daemon=True).start()
+
         try:
-            self.publisher_node.destroy_node()
-            self.subscriber_node.destroy_node()
+            # Let the executor manage spinning
+            executor.spin()
+        except KeyboardInterrupt:
+            print("Shutting down communication.")
         finally:
-            rclpy.shutdown()
+            executor.shutdown()
             self.client_socket.close()
 
     def receive_messages(self):
         try:
+            latest_message = None
             while True:
                 message = receive_packet(self.client_socket)
-                if not message:
-                    rclpy.spin_once(self.publisher_node, timeout_sec=1)
-                    continue
-                self.publisher_node.publish(message)
-                rclpy.spin_once(self.publisher_node, timeout_sec=1)
-                print(f"Server: {message}")
+                if message:
+                    latest_message = json.loads(message)
+
+                if latest_message:
+                    cmd_vel = dict_to_ros_msg(Twist, latest_message)
+                    self.publisher_node.publish_cmd_vel(cmd_vel)
+                    print(f"Processed Latest Server Data: {latest_message}")
+                    latest_message = None
         except (ConnectionResetError, KeyboardInterrupt) as e:
+            default_msg = Twist()
+            self.publisher_node.publish_cmd_vel(default_msg)
             print(f"Receive error: {e}")
         finally:
             print("Server disconnected.")
@@ -129,7 +144,6 @@ class InternalCom:
                 if data.encode() != b"{}":
                     if not send_packet(self.client_socket, data):
                         print("Send Failed")
-                rclpy.spin_once(self.subscriber_node, timeout_sec=3)
         except (ConnectionResetError, BrokenPipeError, KeyboardInterrupt) as e:
             print(f"Send error: {e}")
         finally:
