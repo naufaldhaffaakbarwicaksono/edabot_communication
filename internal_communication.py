@@ -6,11 +6,14 @@ from message_filters import ApproximateTimeSynchronizer, Subscriber, Cache
 from sensor_msgs.msg import Imu
 from nav_msgs.msg import Odometry, OccupancyGrid
 from geometry_msgs.msg import Pose, Twist
+from rcl_interfaces.msg import Log
 
 import socket
 import json
 import threading
 import configs
+from configs import States
+from datetime import datetime, timezone, timedelta
 from utils import ros_msg_to_dict, dict_to_ros_msg
 from edabot_protocol import send_packet, receive_packet
 
@@ -58,6 +61,9 @@ class RosSubHandler(Node):
         )
         sync_topics.registerCallback(self.sync_callback)
 
+        self.create_subscription(Log, "/rosout", self.rosout_callback, 10)
+        self.latest_log = self.log_default
+
         self._json_data = {}
 
     def sync_callback(self, imu: Imu, odom: Odometry):
@@ -67,11 +73,72 @@ class RosSubHandler(Node):
             self.get_logger().warn("Missing data in callback")
             return
 
+        now = datetime.now(timezone.utc)
+        if now - self.latest_log["timestamp"] > timedelta(seconds=1):
+            self.latest_log = self.clean_log()
+
+        # If not all data is available, send empty fields for missing data
+        if not all([imu, odom]):
+            self.get_logger().warn("Missing imu or odom data in callback")
+            self._json_data = {
+                "type": "status",
+                "agentId": f"{configs.robot_id}",
+                "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                "log": self.latest_log,
+                "payload": {
+                    "imu": ros_msg_to_dict(imu) if imu else "",
+                    "odom": ros_msg_to_dict(odom) if odom else "",
+                    "local_costmap": "",
+                    "global_costmap": "",
+                },
+            }
+            return
+
+        if not all([local_costmap, global_costmap]):
+            self.get_logger().warn("Missing costmap data in callback")
+            self._json_data = {
+                "type": "status",
+                "agentId": f"{configs.robot_id}",
+                "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                "log": self.latest_log,
+                "payload": {
+                    "imu": ros_msg_to_dict(imu),
+                    "odom": ros_msg_to_dict(odom),
+                    "local_costmap": "",
+                    "global_costmap": "",
+                },
+            }
+            return
+
+        # All data is available, include the latest log
         self._json_data = {
-            "imu": ros_msg_to_dict(imu),
-            "odom": ros_msg_to_dict(odom),
-            "local_costmap": ros_msg_to_dict(local_costmap),
-            "global_costmap": ros_msg_to_dict(global_costmap),
+            "type": "status",
+            "agentId": f"{configs.robot_id}",
+            "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+            "log": self.latest_log,
+            "payload": {
+                "imu": ros_msg_to_dict(imu),
+                "odom": ros_msg_to_dict(odom),
+                "local_costmap": ros_msg_to_dict(local_costmap),
+                "global_costmap": ros_msg_to_dict(global_costmap),
+            },
+        }
+
+    def rosout_callback(self, msg: Log):
+        if msg.level >= configs.log_level:
+            self.latest_log = {
+                "level": msg.level,
+                "msg": msg.msg,
+                "name": msg.name,
+                "timestamp": datetime.now(timezone.utc),
+            }
+
+    def clean_log(self):
+        return {
+            "level": 0,
+            "msg": "",
+            "name": "",
+            "timestamp": datetime.now(timezone.utc),
         }
 
     @property
@@ -88,7 +155,7 @@ class InternalCom:
         self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         self.client_socket.bind((configs.orin_ip, configs.orin_port))
         if configs.bypass_integrity:
-            self.client_socket.connect((configs.raspi_ip, configs.raspi_port_server))
+            self.client_socket.connect((configs.raspi_ip_internal, configs.raspi_port_internal))
         else:
             self.client_socket.connect((configs.zinq_ip, configs.zinq_port_secure))
 
@@ -140,6 +207,9 @@ class InternalCom:
     def send_messages(self):
         try:
             while True:
+                if configs.state == States.INIT:
+                    continue
+
                 data = json.dumps(self.subscriber_node.json_data)
                 if data.encode() != b"{}":
                     if not send_packet(self.client_socket, data):
