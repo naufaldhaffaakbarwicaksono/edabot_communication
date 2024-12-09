@@ -155,7 +155,9 @@ class InternalCom:
         self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         self.client_socket.bind((configs.orin_ip, configs.orin_port))
         if configs.bypass_integrity:
-            self.client_socket.connect((configs.raspi_ip, configs.raspi_port_server))
+            self.client_socket.connect(
+                (configs.raspi_ip_internal, configs.raspi_port_internal)
+            )
         else:
             self.client_socket.connect((configs.zinq_ip, configs.zinq_port_secure))
 

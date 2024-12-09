@@ -28,9 +28,10 @@ log_level = LogLevels.WARN
 state = States.INIT
 robot_id = int(os.getenv("ROBOT_ID"))
 
-raspi_ip = os.getenv("RASPI_IP")
-raspi_port_server = int(os.getenv("RASPI_PORT_SERVER"))
-raspi_port_client = int(os.getenv("RASPI_PORT_CLIENT"))
+raspi_ip_internal = os.getenv("RASPI_IP_INTERNAL")
+raspi_ip_external = os.getenv("RASPI_IP_EXTERNAL")
+raspi_port_internal = int(os.getenv("RASPI_PORT_INTERNAL"))
+raspi_port_external = int(os.getenv("RASPI_PORT_EXTERNAL"))
 
 zinq_ip = os.getenv("ZINQ_IP")
 zinq_port_secure = int(os.getenv("ZINQ_PORT_SECURE"))
