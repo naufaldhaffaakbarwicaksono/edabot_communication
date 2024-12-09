@@ -8,6 +8,7 @@ is_simulation = False
 robot_id = int(os.getenv("ROBOT_ID"))
 
 raspi_ip = os.getenv("RASPI_IP")
+raspi_ip_internal = os.getenv("RASPI_IP_INTERNAL") # Only used for internal communication when integrity bypass is enabled
 raspi_port_server = int(os.getenv("RASPI_PORT_SERVER"))
 raspi_port_client = int(os.getenv("RASPI_PORT_CLIENT"))
 

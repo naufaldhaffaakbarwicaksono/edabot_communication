@@ -1,5 +1,4 @@
 import socket
-import json
 import threading
 import configs
 from edabot_protocol import send_packet, receive_packet
