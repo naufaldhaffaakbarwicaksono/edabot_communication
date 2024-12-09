@@ -60,7 +60,7 @@ Edabot Communication is a system designed to manage and simulate communication p
 
 3. Set up the environment:
    ```bash
-   cp .env.example .env
+   cp env.example .env
    ```
    Configure the `.env` file with your environment-specific settings.
 
